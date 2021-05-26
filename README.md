@@ -1,4 +1,4 @@
-# esp_rest_v3
+# uni-frame-iot
 This is a project for the ESP8266 to allow for a plug and play REST network of devices.
 
 The way it works is as follows:
@@ -10,3 +10,11 @@ The way it works is as follows:
 Some notes about how it works:
 * All ESP devices are communicated to via the first powered on ESP (known as the master). Which device is the master is not relavant, as all devices are access the same.
 * You communicate to the endpoints using Json and you specify which ESP to use using its "name", which can be changed via an endpoint.
+
+# Libraries
+Please not this project required the following libraries at these specific versions (using newer versions not work)
+- ArduinoJson @ 5.13.2
+- TinyUPnP @ 3.1.4
+
+# Environment
+This project is designed to be compiled using PlatformIO https://platformio.org/
