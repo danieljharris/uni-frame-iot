@@ -17,4 +17,4 @@ Please not this project required the following libraries at these specific versi
 - TinyUPnP @ 3.1.4
 
 # Environment
-This project is designed to be compiled using PlatformIO https://platformio.org/
+This project is designed to be compiled using [PlatformIO](https://platformio.org/). To compile the project outside of PlatformIO (such as in the Arduino IDE) please move all files from /src and /include into a single folder.
