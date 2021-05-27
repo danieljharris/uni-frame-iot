@@ -11,14 +11,8 @@ bool MasterServer::start() {
 		Serial.println("failed to become master, could not connect to wifi");
 		return false;
 	}
-	else Serial.println("I am a master!");
-
-	//Sets the ESP's output pin to OFF
-	pinMode(GPIO_OUTPUT_PIN, OUTPUT);
-	digitalWrite(GPIO_OUTPUT_PIN, HIGH);
-
-	//Sets the ESP's input pin
-	pinMode(GPIO_INPUT_PIN, INPUT_PULLUP);
+	
+	Serial.println("I am a master!");
 
 	//Starts access point for new devices to connect to
 	Serial.println("Opening soft access point...");

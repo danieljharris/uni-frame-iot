@@ -5,6 +5,7 @@
 #include "Setupserver.h"
 #include "ClientServer.h"
 #include "MasterServer.h"
+#include "Config.h"
 
 #include <ArduinoOTA.h>
 #include <PolledTimeout.h>
@@ -17,6 +18,10 @@ esp8266::polledTimeout::periodic period(1000 * 10);
 void setup() {
 	Serial.begin(115200);
 	Serial.println("\nStarting ESP8266...");
+	
+	pinMode(GPIO_OUTPUT_PIN, OUTPUT);
+	digitalWrite(GPIO_OUTPUT_PIN, HIGH);
+	pinMode(GPIO_INPUT_PIN, INPUT_PULLUP);
 
 	server = new ClientServer();
 	if (server->start()) return;

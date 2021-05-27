@@ -11,14 +11,8 @@ bool ClientServer::start() {
 		Serial.println("Failed to become client");
 		return false;
 	}
-	else Serial.println("I am a client!");
 
-	//Sets the ESP's output pin to OFF
-	pinMode(GPIO_OUTPUT_PIN, OUTPUT);
-	digitalWrite(GPIO_OUTPUT_PIN, HIGH);
-
-	//Sets the ESP's input pin
-	pinMode(GPIO_INPUT_PIN, INPUT_PULLUP);
+	Serial.println("I am a client!");
 
 	Serial.println("Letting master know I exist...");
 	checkinWithMaster();
