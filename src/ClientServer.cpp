@@ -516,7 +516,7 @@ bool ClientServer::connectToWiFi(WiFiInfo info) {
 	WiFi.begin(info.ssid, info.password);
 
 	// Wait for connection
-	for (int i = 0; WiFi.status() != WL_CONNECTED && i < 15; i++) {
+	for (int i = 0; WiFi.status() != WL_CONNECTED && i < 10; i++) {
 		delay(500);
 		Serial.print(".");
 	}

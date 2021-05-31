@@ -45,15 +45,15 @@ std::function<void()> SetupServer::handleSetupConfig() {
 
 		String content = "";
 		content += "<html><body>";
-		content += "<div style='font-size:24px;'>";
+		content += "<div style='font-size:65px;padding:15px 32px;'>";
 
 		content += "<form action='/connect' method='POST'>Log in to Voice Controler:<br>";
 
-		content += "SSID:          <select name='SSID'>" + options + "</select><br>";
+		content += "SSID:          <select name='SSID' style='font-size:65px;padding:15px 32px;'>" + options + "</select><br>";
 
-		content += "Password:      <input type='password' name='PASSWORD' placeholder='password found on router' value='" + password + "'><br>";
-		content += "Device Name:   <input type='text' name='NAME' placeholder='device name' value='" + name + "'><br>";
-		content += "<input type='submit' value='Connect'></form><br><br>";
+		content += "Password:      <input type='password' name='PASSWORD' placeholder='password found on router' value='" + password + "' style='font-size:65px;padding:15px 32px;'><br>";
+		content += "Device Name:   <input type='text' name='NAME' placeholder='device name' value='" + name + "' style='font-size:65px;padding:15px 32px;'><br>";
+		content += "<input type='submit' value='Connect' style='font-size:65px;padding:15px 32px;'></form><br><br>";
 
 		content += "</div>";
 		content += "</body></html>";
@@ -72,10 +72,12 @@ std::function<void()> SetupServer::handleSetupConnect() {
 			String strName = server.arg("NAME");
 
 			content += "<html><body>";
+			content += "<div style='font-size:65px;padding:15px 32px;'>";
 			content += "Connecting to given SSID and PASSWORD<br>";
 			content += "SSID: " + strSsid + "<br>";
 			content += "Password: ********<br>";
 			content += "Name: " + strName + "<br>";
+			content += "</div>";
 			content += "</body></html>";
 			server.send(HTTP_CODE_OK, "text/html", content);
 
