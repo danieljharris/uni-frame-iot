@@ -230,7 +230,7 @@ void MasterServer::reDirect() {
 		return;
 	}
 
-	WiFiClient client;
+	WiFiClientSecure client;
 	if (client.connect(ip, CLIENT_PORT)) {
 		HTTPClient http;
 		http.setTimeout(2000); //Reduced the timeout from 5000 to fail faster

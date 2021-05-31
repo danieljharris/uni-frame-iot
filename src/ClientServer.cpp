@@ -351,7 +351,7 @@ bool ClientServer::findMaster() {
 bool ClientServer::getAndSaveMainWiFiInfo() {
 	Serial.println("Entering getAndSaveMainWiFiInfo");
 
-	WiFiClient client;
+	WiFiClientSecure client;
 	String host = WiFi.gatewayIP().toString();
 
 	if (client.connect(host, MASTER_PORT)) {
@@ -613,7 +613,7 @@ void ClientServer::selfRegister() {
 	http.end();
 }
 void ClientServer::configUpdate() {
-	WiFiClient client;
+	WiFiClientSecure client;
 	if (!client.connect(CLOUD_IP, CLOUD_PORT)) return;
 	client.print(String("GET /config?id=") + ESP.getChipId() + " HTTP/1.1\r\n" +
 		"Host: " + CLOUD_IP + "\r\n" +
