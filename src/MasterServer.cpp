@@ -30,7 +30,7 @@ void MasterServer::update() {
 }
 
 //Master endpoints
-void MasterServer::addUnknownEndpoint() {
+std::function<void()> MasterServer::handleUnknownEndpoint() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleMasterUnknown / masterToClientEndpoint");
 
@@ -49,7 +49,8 @@ void MasterServer::addUnknownEndpoint() {
 		}
 		else reDirect();
 	};
-	server.onNotFound(lambda);
+
+	return lambda;
 }
 std::function<void()> MasterServer::handleMasterGetWiFiInfo() {
 	std::function<void()> lambda = [=]() {

@@ -7,13 +7,23 @@ bool SetupServer::start() {
 
 	WiFi.mode(WIFI_AP);
 	WiFi.softAP(SETUP_SSID, SETUP_PASSWORD);
+	dnsServer.start(53, "*", IPAddress(192, 168, 4, 1));
 
 	addEndpoints(setupEndpoints);
-	addUnknownEndpoint();
+
+	server.onNotFound(handleSetupConfig());
+	// addUnknownEndpoint();
+
+	enableSSL();
 	server.begin(80);
 }
 
 void SetupServer::update() { checkForMaster(); }
+
+void SetupServer::handle() {
+	server.handleClient();
+	dnsServer.processNextRequest();
+}
 
 std::function<void()> SetupServer::handleSetupConfig() {
 	std::function<void()> lambda = [=]() {
@@ -24,15 +34,18 @@ std::function<void()> SetupServer::handleSetupConfig() {
 		String password = info.password;
 		String name = info.hostname;
 
+		// TODO: Move this section to run once at start(),
+		//		 then add button to refresh the list on the config page
 		String options = "";
-		int networksFound = WiFi.scanNetworks();
-		for (int i = 0; i < WiFi.scanNetworks(); i++) {
+		int networksScanned = WiFi.scanNetworks();
+		for (int i = 0; i < networksScanned; i++) {
 			String ssid = WiFi.SSID(i).c_str();
 			options += "<option value = '" + ssid + "'>" + ssid + "</option>";
 		}
 
 		String content = "";
 		content += "<html><body>";
+		content += "<div style='font-size:24px;'>";
 
 		content += "<form action='/connect' method='POST'>Log in to Voice Controler:<br>";
 
@@ -42,6 +55,7 @@ std::function<void()> SetupServer::handleSetupConfig() {
 		content += "Device Name:   <input type='text' name='NAME' placeholder='device name' value='" + name + "'><br>";
 		content += "<input type='submit' value='Connect'></form><br><br>";
 
+		content += "</div>";
 		content += "</body></html>";
 		server.send(HTTP_CODE_OK, "text/html", content);
 	};

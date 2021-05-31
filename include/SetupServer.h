@@ -3,16 +3,15 @@
 #ifndef _SETUPSERVER_h
 #define _SETUPSERVER_h
 
-#if defined(ARDUINO) && ARDUINO >= 100
-	#include "arduino.h"
-#else
-	#include "WProgram.h"
-#endif
+#include "arduino.h"
 
 #include "FrameworkServer.h"
+#include <DNSServer.h>
 
 class SetupServer : public FrameworkServer {
 private:
+	DNSServer dnsServer;
+
 	const char* SETUP_SSID = getDeviceHostName();
 
 	//Setup endpoint handleing
@@ -30,7 +29,7 @@ private:
 public:
 	bool start();
 	void update();
+	void handle();
 };
 
 #endif
-

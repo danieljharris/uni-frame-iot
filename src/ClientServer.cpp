@@ -27,8 +27,8 @@ void ClientServer::startServer(std::vector<Endpoint> endpoints, int port, String
 	Serial.println("Adding endpoints...");
 	addEndpoints(endpoints);
 
-	Serial.println("Adding unknown endpoint...");
-	addUnknownEndpoint();
+	Serial.println("Enabeling SSL encryption...");
+	enableSSL();
 
 	Serial.println("Starting server...");
 	server.begin(port);
