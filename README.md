@@ -12,7 +12,7 @@ Some notes about how it works:
 * You communicate to the endpoints using Json and you specify which ESP to use using its "name", which can be changed via an endpoint.
 
 # Libraries
-Please not this project required the following libraries at these specific versions (using newer versions will not work).
+Please note this project required the following libraries at these specific versions (using newer versions will not work).
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson) @ 5.13.2
 - [TinyUPnP](https://github.com/ofekp/TinyUPnP) @ 3.1.4
 
