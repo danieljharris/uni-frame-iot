@@ -20,11 +20,11 @@ private:
 
 	//Setup endpoints
 	std::vector<Endpoint> setupEndpoints{
-		Endpoint("/", HTTP_GET, handleSetupConfig()),
+		Endpoint("/",        HTTP_GET, handleSetupConfig()),
 		Endpoint("/connect", HTTP_ANY, handleSetupConnect())
 	};
 
-	void checkForMaster();
+	void checkForLeader();
 
 public:
 	bool start();

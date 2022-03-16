@@ -7,23 +7,25 @@ bool ClientServer::start() {
 
 	WiFi.mode(WIFI_STA);
 
-	if (!findAndConnectToMaster()) {
+	if (!findAndConnectToLeader()) {
 		Serial.println("Failed to become client");
 		return false;
 	}
 
+	delay(1000);
+
 	Serial.println("I am a client!");
 
-	Serial.println("Letting master know I exist...");
-	checkinWithMaster();
+	Serial.println("Letting leader know I exist...");
+	checkinWithLeader();
 
-	startServer(clientEndpoints, CLIENT_PORT, CLIENT_MDNS_ID);
+	startServer(clientEndpoints);
 	Serial.println("Ready!");
 
 	return true;
 }
 
-void ClientServer::startServer(std::vector<Endpoint> endpoints, int port, String mdnsId) {
+void ClientServer::startServer(std::vector<Endpoint> endpoints) {
 	Serial.println("Adding endpoints...");
 	addEndpoints(endpoints);
 
@@ -31,31 +33,34 @@ void ClientServer::startServer(std::vector<Endpoint> endpoints, int port, String
 	enableSSL();
 
 	Serial.println("Starting server...");
-	server.begin(port);
+	server.begin(PORT);
 
 	Serial.println("Starting MDNS...");
-	enableMDNS(mdnsId);
+	enableMDNS();
 
 	Serial.println("Enableing OTA updates...");
 	enableOTA();
 
-	Serial.println("Configuring UPnP...");
-	enableUPnP(port, mdnsId);
+	// TODO: Fix UPnP
+	// Serial.println("Configuring UPnP...");
+	// enableUPnP(PORT, MDNS_ID);
 
 	Serial.println("Registering on cloud...");
-	selfRegister();
-
-	Serial.println("Updating config from cloud...");
-	configUpdate();
+	if (selfRegister()) {
+		Serial.println("Updating config from cloud...");
+		configUpdate();
+	}
+	else
+		Serial.println("Warning: Unable to contact cloud");
 }
 
-void ClientServer::update() { checkinWithMaster(); }
+void ClientServer::update() { checkinWithLeader(); }
 
 //Client endpoints
 std::function<void()> ClientServer::handleClientGetInfo() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleClientGetInfo");
-		server.send(HTTP_CODE_OK, "application/json", getDeviceInfo());
+		return Response(HTTP_CODE_OK, getDeviceInfo());
 	};
 	return lambda;
 }
@@ -63,16 +68,13 @@ std::function<void()> ClientServer::handleClientPostDevice() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleClientPostDevice");
 
-		if (!server.hasArg("plain")) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!server.hasArg("plain")) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.parseObject(server.arg("plain"));
 
-		if (!json.success()) { server.send(HTTP_CODE_BAD_REQUEST); return; }
-		if (!json.containsKey("action")) {
-			server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"action_field_missing\"}");
-			return;
-		}
+		if (!json.success())             return ErrorResponse(HTTP_CODE_BAD_REQUEST);
+		if (!json.containsKey("action")) return ErrorResponse(HTTP_CODE_BAD_REQUEST, "action_field_missing");
 
 		bool lastState = gpioPinState;
 
@@ -81,8 +83,7 @@ std::function<void()> ClientServer::handleClientPostDevice() {
 		}
 		else if (json["action"] == "pulse") {
 			if (!json.containsKey("direction")) {
-				server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"direction_field_missing\"}");
-				return;
+				return ErrorResponse(HTTP_CODE_BAD_REQUEST, "direction_field_missing");
 			}
 			else if (json["direction"] == "off_on_off") {
 				power_on();
@@ -95,18 +96,15 @@ std::function<void()> ClientServer::handleClientPostDevice() {
 				power_on();
 			}
 			else {
-				server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"direction_field_invalid\"}");
-				return;
+				return ErrorResponse(HTTP_CODE_BAD_REQUEST, "direction_field_invalid");
 			}
 		}
 		else if (json["action"] == "set") {
 			if (!json.containsKey("power")) {
-				server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"power_field_missing\"}");
-				return;
+				return ErrorResponse(HTTP_CODE_BAD_REQUEST, "power_field_missing");
 			}
 			else if (!json["power"].is<bool>()) {
-				server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"power_field_invalid\"}");
-				return;
+				return ErrorResponse(HTTP_CODE_BAD_REQUEST, "power_field_invalid");
 			}
 			else if (json["power"] == true) {
 				power_on();
@@ -115,13 +113,11 @@ std::function<void()> ClientServer::handleClientPostDevice() {
 				power_off();
 			}
 			else {
-				server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"power_field_invalid\"}");
-				return;
+				return ErrorResponse(HTTP_CODE_BAD_REQUEST, "power_field_invalid");
 			}
 		}
 		else {
-			server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"action_field_invalid\"}");
-			return;
+			return ErrorResponse(HTTP_CODE_BAD_REQUEST, "action_field_invalid");
 		}
 
 		//Creates return json object
@@ -131,10 +127,7 @@ std::function<void()> ClientServer::handleClientPostDevice() {
 		output["power"] = gpioPinState;
 		output["last_state"] = lastState;
 
-		String result;
-		output.printTo(result);
-
-		server.send(HTTP_CODE_OK, "application/json", result);
+		return Response(HTTP_CODE_OK, output);
 	};
 	return lambda;
 }
@@ -142,15 +135,14 @@ std::function<void()> ClientServer::handleClientPostName() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleClientPostName");
 
-		if (!server.hasArg("plain")) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!server.hasArg("plain")) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.parseObject(server.arg("plain"));
 
-		if (!json.success()) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!json.success()) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 		if (!json.containsKey("new_name")) {
-			server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"new_name_field_missing\"}");
-			return;
+			return ErrorResponse(HTTP_CODE_BAD_REQUEST, "new_name_field_missing");
 		}
 
 		String new_name = json["new_name"].asString();
@@ -160,13 +152,9 @@ std::function<void()> ClientServer::handleClientPostName() {
 		//Creates the return json object
 		DynamicJsonBuffer jsonBuffer2;
 		JsonObject& output = jsonBuffer2.createObject();
-
 		output["new_name"] = new_name;
 
-		String outputStr;
-		output.printTo(outputStr);
-
-		server.send(HTTP_CODE_OK, "application/json", outputStr);
+		return Response(HTTP_CODE_OK, output);
 	};
 	return lambda;
 }
@@ -174,15 +162,14 @@ std::function<void()> ClientServer::handleClientPostWiFiCreds() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleClientPostWiFiCreds");
 
-		if (!server.hasArg("plain")) { server.send(HTTP_CODE_BAD_REQUEST); return;}
+		if (!server.hasArg("plain")) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.parseObject(server.arg("plain"));
 
-		if (!json.success()) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!json.success()) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 		if (!json.containsKey("ssid") && !json.containsKey("password")) {
-			server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"ssid_and_password_fields_missing\"}");
-			return;
+			return ErrorResponse(HTTP_CODE_BAD_REQUEST, "ssid_and_password_fields_missing");
 		}
 
 		WiFiInfo oldInfo = creds.load();
@@ -202,10 +189,7 @@ std::function<void()> ClientServer::handleClientPostWiFiCreds() {
 		if (json.containsKey("ssid")) output["ssid"] = json["ssid"];
 		if (json.containsKey("password")) output["password"] = json["password"];
 
-		String outputStr;
-		output.printTo(outputStr);
-
-		server.send(HTTP_CODE_OK, "application/json", outputStr);
+		return Response(HTTP_CODE_OK, output);
 	};
 	return lambda;
 }
@@ -234,13 +218,9 @@ std::function<void()> ClientServer::handleClientPostRestart() {
 		DynamicJsonBuffer jsonBuffer2;
 		JsonObject& output = jsonBuffer2.createObject();
 
-		output["delay_seconds"] = delaySeconds;
-
-		String outputStr;
-		output.printTo(outputStr);
-
 		//Default sleep used allow server to return this send line:
-		server.send(HTTP_CODE_OK, "application/json", outputStr);
+		output["delay_seconds"] = delaySeconds;
+		Response(HTTP_CODE_OK, output);
 
 		Serial.print("Sleeping for seconds: ");
 		Serial.println(delaySeconds);
@@ -251,24 +231,22 @@ std::function<void()> ClientServer::handleClientPostRestart() {
 	};
 	return lambda;
 }
-std::function<void()> ClientServer::handleClientPostNewMaster() {
+std::function<void()> ClientServer::handleClientPostNewLeader() {
 	std::function<void()> lambda = [=]() {
-		Serial.println("Entering handleClientPostNewMaster");
+		Serial.println("Entering handleClientPostNewleader");
 
-		if (!server.hasArg("plain")) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!server.hasArg("plain")) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.parseObject(server.arg("plain"));
 
-		if (!json.success()) { server.send(HTTP_CODE_BAD_REQUEST); return; }
-		if (!json.containsKey("ip")) {
-			server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"ip_field_missing\"}");
-			return;
-		}
-		server.send(HTTP_CODE_OK);
+		if (!json.success())         return ErrorResponse(HTTP_CODE_BAD_REQUEST);
+		if (!json.containsKey("ip")) return ErrorResponse(HTTP_CODE_BAD_REQUEST, "ip_field_missing");
 
-		String newMasterIP = json["ip"].asString();
-		masterIP = newMasterIP;
+		Response(HTTP_CODE_OK);
+
+		String newleaderIP = json["ip"].asString();
+		leaderIP = newleaderIP;
 
 		if (json.containsKey("delay_seconds")) {
 			int delaySeconds = json["delay_seconds"].as<int>();
@@ -286,7 +264,7 @@ std::function<void()> ClientServer::handleClientPostNewMaster() {
 std::function<void()> ClientServer::handleClientGetConnected() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleClientGetConnected");
-		server.send(HTTP_CODE_OK, "application/json", getConnected());
+		Response(HTTP_CODE_OK, getConnected());
 	};
 	return lambda;
 }
@@ -294,18 +272,17 @@ std::function<void()> ClientServer::handleClientPostConnected() {
 	std::function<void()> lambda = [=]() {
 		Serial.println("Entering handleClientPostConnected");
 
-		if (!server.hasArg("plain")) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!server.hasArg("plain")) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 
 		String inputString = server.arg("plain");
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.parseObject(inputString);
 
-		if (!json.success()) { server.send(HTTP_CODE_BAD_REQUEST); return; }
+		if (!json.success()) return ErrorResponse(HTTP_CODE_BAD_REQUEST);
 
 		if (!json.containsKey("dest_id") || !json.containsKey("method") || !json.containsKey("path") || !json.containsKey("data")) {
-			server.send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"missing_required_field\"}");
-			return;
+			return ErrorResponse(HTTP_CODE_BAD_REQUEST, "missing_required_field");
 		}
 
 		String id     = json["dest_id"].asString();
@@ -314,18 +291,18 @@ std::function<void()> ClientServer::handleClientPostConnected() {
 		String data   = json["data"].asString();
 
 		connected.save(id, method, path, data);
-		server.send(HTTP_CODE_OK, "application/json");
+		return Response(HTTP_CODE_OK);
 	};
 	return lambda;
 }
 
 //Client creation
-bool ClientServer::findAndConnectToMaster() {
-	//Can the master access point be found?
-	if (findMaster()) {
-		//Can I connect to the master access point?
-		if (connectToWiFi(MASTER_INFO)) {
-			//Can I get and save WiFi credentials from the master?
+bool ClientServer::findAndConnectToLeader() {
+	//Can the leader access point be found?
+	if (findLeader()) {
+		//Can I connect to the leader access point?
+		if (connectToWiFi(LEADER_INFO)) {
+			//Can I get and save WiFi credentials from the leader?
 			if (getAndSaveMainWiFiInfo()) {
 				//Can I connect to the WiFi router using the credentials?
 				return connectToWiFi(creds.load());
@@ -334,10 +311,10 @@ bool ClientServer::findAndConnectToMaster() {
 	}
 	return false;
 }
-bool ClientServer::findMaster() {
-	Serial.println("Entering findMaster");
+bool ClientServer::findLeader() {
+	Serial.println("Entering findleader");
 
-	String lookingFor = MASTER_INFO.ssid;
+	String lookingFor = LEADER_INFO.ssid;
 	int foundNetworks = WiFi.scanNetworks();
 	for (int i = 0; i < foundNetworks; i++) {
 		String current_ssid = WiFi.SSID(i);
@@ -350,11 +327,22 @@ bool ClientServer::findMaster() {
 }
 bool ClientServer::getAndSaveMainWiFiInfo() {
 	Serial.println("Entering getAndSaveMainWiFiInfo");
-
+	
 	WiFiClientSecure client;
 	String host = WiFi.gatewayIP().toString();
 
-	if (client.connect(host, MASTER_PORT)) {
+	// Serial.println("1..............................1");
+	// // Serial.println("Host: " + host);
+	// Serial.println("2..............................2");
+	// Serial.println("Port: " + PORT);
+	// Serial.println("Port: " + PORT);
+	// Serial.println("Port: " + PORT);
+	// Serial.println("Port: " + 1200);
+	// Serial.println("Port: 1200");
+	// Serial.println("3..............................3");
+	// Serial.println("TEST..............................");
+
+	if (client.connect(host, PORT)) {
 		client.print(String("GET /wifi_info") + " HTTP/1.1\r\n" +
 			"Host: " + host + "\r\n" +
 			"Connection: close\r\n" +
@@ -373,11 +361,11 @@ bool ClientServer::getAndSaveMainWiFiInfo() {
 		JsonObject& json = jsonBuffer.parseObject(payload);
 
 		if (!json.success()) return false;
-		if (!json.containsKey("ssid") && !json.containsKey("password") && !json.containsKey("master_ip")) {
+		if (!json.containsKey("ssid") && !json.containsKey("password") && !json.containsKey("leader_ip")) {
 			return false;
 		}
 
-		masterIP = json["master_ip"].asString();
+		leaderIP = json["leader_ip"].asString();
 		String ssid = json["ssid"].asString();
 		String password = json["password"].asString();
 
@@ -387,28 +375,28 @@ bool ClientServer::getAndSaveMainWiFiInfo() {
 	}
 	else {
 		client.stop();
-		Serial.println("Failed to get WiFi credentials from master");
+		Serial.println("Failed to get WiFi credentials from leader");
 		return false;
 	}
 }
 
-//Client to master handleing
-void ClientServer::checkinWithMaster() {
-	Serial.println("Checking up on master");
+//Client to leader handleing
+void ClientServer::checkinWithLeader() {
+	Serial.println("Checking up on leader");
 
 	HTTPClient http;
-	http.begin("http://" + masterIP + ":" + String(MASTER_PORT) + "/checkin");
+	http.begin("http://" + leaderIP + ":" + String(PORT) + "/checkin");
 	int httpCode = http.sendRequest("POST", getDeviceInfo());
 	http.end();
 
-	if (httpCode != HTTP_CODE_OK && !updateMasterIP()) {
-		electNewMaster();
+	if (httpCode != HTTP_CODE_OK && !updateLeaderIP()) {
+		electNewLeader();
 	}
 }
-bool ClientServer::updateMasterIP() {
-	Serial.println("Entering updateMasterIP");
+bool ClientServer::updateLeaderIP() {
+	Serial.println("Entering updateLeaderIP");
 
-	if (MDNS.queryService(MASTER_MDNS_ID, "tcp") < 1) {
+	if (MDNS.queryService(MDNS_ID, "tcp") < 1) {
 		return false;
 	}
 	else {
@@ -416,13 +404,13 @@ bool ClientServer::updateMasterIP() {
 			return false;
 		}
 		else {
-			masterIP = MDNS.answerIP(0).toString();
+			leaderIP = MDNS.answerIP(0).toString();
 			return true;
 		}
 	}
 }
-void ClientServer::electNewMaster() {
-	Serial.println("Entering electNewMaster");
+void ClientServer::electNewLeader() {
+	Serial.println("Entering electNewleader");
 
 	//Initalises the chosen id to the id of the current device
 	String myId = String(ESP.getChipId());
@@ -431,9 +419,9 @@ void ClientServer::electNewMaster() {
 	std::vector<String> clientIPs;
 
 	//Query for client devices
-	int devicesFound = MDNS.queryService(CLIENT_MDNS_ID, "tcp");
+	int devicesFound = MDNS.queryService(MDNS_ID, "tcp");
 	for (int i = 0; i < devicesFound; ++i) {
-		//Saves IPs for use when becoming master later
+		//Saves IPs for use when becoming leader later
 		clientIPs.push_back(MDNS.answerIP(i).toString());
 
 		String reply = MDNS.answerHostname(i);
@@ -451,14 +439,14 @@ void ClientServer::electNewMaster() {
 	}
 
 	if (myId.equals(chosenId)) {
-		Serial.println("I've been chosen as the new master");
-		becomeMaster(clientIPs);
+		Serial.println("I've been chosen as the new leader");
+		becomeLeader(clientIPs);
 	}
 	else {
 		Serial.println("I've been chosen to stay as a client");
 	}
 }
-void ClientServer::becomeMaster(std::vector<String> clientIPs) {
+void ClientServer::becomeLeader(std::vector<String> clientIPs) {
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& json = jsonBuffer.createObject();
 
@@ -468,14 +456,14 @@ void ClientServer::becomeMaster(std::vector<String> clientIPs) {
 	String result;
 	json.printTo(result);
 
-	//Notifies all clients that this device will be the new master
+	//Notifies all clients that this device will be the new leader
 	for (std::vector<String>::iterator it = clientIPs.begin(); it != clientIPs.end(); ++it) {
-		Serial.println("Letting know I'm about to be master: " + *it);
+		Serial.println("Letting know I'm about to be leader: " + *it);
 
 		HTTPClient http;
-		//Increase the timeout from 5000 to allow other clients to go through the electNewMaster stages
+		//Increase the timeout from 5000 to allow other clients to go through the electNewleader stages
 		http.setTimeout(7000);
-		http.begin("http://" + *it + ":" + CLIENT_PORT + "/master");
+		http.begin("http://" + *it + ":" + PORT + "/leader");
 		http.sendRequest("POST", result);
 		http.end();
 	}
@@ -484,11 +472,12 @@ void ClientServer::becomeMaster(std::vector<String> clientIPs) {
 	ESP.restart();
 }
 
-//General reusable functions for client & master servers
+//General reusable functions for client & leader servers
 String ClientServer::getDeviceInfo() {
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& json = jsonBuffer.createObject();
 
+	json["version"] = UNI_FRAME_VERSION;
 	json["id"] = ESP.getChipId();
 	json["ip"] = WiFi.localIP().toString();
 	json["name"] = creds.load().hostname;
@@ -529,19 +518,30 @@ bool ClientServer::connectToWiFi(WiFiInfo info) {
 	else Serial.println("Could not connect!");
 	return (WiFi.status() == WL_CONNECTED);
 }
-void ClientServer::enableMDNS(String mdnsId) {
+void ClientServer::enableMDNS() {
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& json = jsonBuffer.createObject();
 
-	json["id"] = ESP.getChipId();
-	json["name"] = creds.load().hostname;
+	int id = ESP.getChipId();
+	String hostname = creds.load().hostname;
+	String serviceName = hostname + "-" + String(id);
+
+	json["id"] = id;
+	json["name"] = hostname;
 	
 	String jsonName;
 	json.printTo(jsonName);
 
 	MDNS.close();
-	MDNS.begin(jsonName.c_str());
-	MDNS.addService(mdnsId, "tcp", 80); //Broadcasts IP so can be seen by other devices
+	MDNS.begin(serviceName);
+
+
+	MDNSResponder::hMDNSService service = MDNS.addService(serviceName.c_str(), MDNS_ID.c_str(), "tcp", PORT);
+	MDNS.addServiceTxt(service, "Version", UNI_FRAME_VERSION);
+	MDNS.addServiceTxt(service, "ID", id);
+	MDNS.addServiceTxt(service, "Name", hostname.c_str()); //TODO: Make dynamic
+
+	MDNS.addServiceTxt(service, "Data", jsonName.c_str()); //Replace with reading directly form MDNS TXT
 }
 void ClientServer::enableOTA() {
 	//Enabled "Over The Air" updates so that the ESPs can be updated remotely 
@@ -561,9 +561,9 @@ void ClientServer::enableOTA() {
 
 	ArduinoOTA.begin();
 }
-void ClientServer::enableUPnP(int port, String mdnsId) {
+void ClientServer::enableUPnP(int port, String serviceName) {
 	boolean portMappingAdded = false;
-	tinyUPnP.addPortMappingConfig(WiFi.localIP(), port, "TCP", 36000, mdnsId);
+	tinyUPnP.addPortMappingConfig(WiFi.localIP(), port, "TCP", 36000, serviceName);
 	while (!portMappingAdded) {
 		portMappingAdded = tinyUPnP.commitPortMappings();
 		if (!portMappingAdded) {
@@ -594,10 +594,11 @@ void ClientServer::power_off() {
 }
 
 // Cloud integration
-void ClientServer::selfRegister() {
+bool ClientServer::selfRegister() {
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& json = jsonBuffer.createObject();
 
+	json["version"] = UNI_FRAME_VERSION;
 	json["id"] = ESP.getChipId();
 	json["name"] = creds.load().hostname;
 
@@ -609,8 +610,13 @@ void ClientServer::selfRegister() {
 
 	HTTPClient http;
 	http.begin(url);
-	http.POST(body);
+	int httpCode = http.POST(body);
 	http.end();
+
+	if (httpCode != HTTP_CODE_OK)
+		return false;
+	else
+		return true;
 }
 void ClientServer::configUpdate() {
 	WiFiClientSecure client;
@@ -668,7 +674,7 @@ void ClientServer::configUpdate() {
 //		}
 //		server.send(HTTP_CODE_OK);
 //
-//		String ip = masterIP + ":" + MASTER_PORT;
+//		String ip = leaderIP + ":" + LEADER_PORT;
 //		String url = "http://" + ip + "/device";
 //
 //		DynamicJsonBuffer jsonBuffer2;
@@ -748,7 +754,7 @@ void ClientServer::checkInputChange() {
 			String dataWithID;
 			json.printTo(dataWithID);
 
-			String ip = masterIP + ":" + MASTER_PORT;
+			String ip = leaderIP + ":" + PORT;
 			String url = "http://" + ip + "/" + path + "?id=" + id;
 
 			// Send http command to connected device

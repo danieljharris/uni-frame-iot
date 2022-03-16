@@ -18,7 +18,7 @@ bool SetupServer::start() {
 	server.begin(80);
 }
 
-void SetupServer::update() { checkForMaster(); }
+void SetupServer::update() { checkForLeader(); }
 
 void SetupServer::handle() {
 	server.handleClient();
@@ -101,16 +101,16 @@ std::function<void()> SetupServer::handleSetupConnect() {
 	return lambda;
 }
 
-void SetupServer::checkForMaster() {
-	Serial.println("Checking for master...");
+void SetupServer::checkForLeader() {
+	Serial.println("Checking for leader...");
 
-	String lookingFor = MASTER_INFO.ssid;
+	String lookingFor = LEADER_INFO.ssid;
 	int foundNetworks = WiFi.scanNetworks();
 	for (int i = 0; i < foundNetworks; i++) {
 		String current_ssid = WiFi.SSID(i);
 
 		if (current_ssid.equals(lookingFor)) {
-			Serial.println("Master found! Restarting...");
+			Serial.println("Leader found! Restarting...");
 			ESP.restart();
 		}
 	}

@@ -4,7 +4,7 @@
 #include "FrameworkServer.h"
 #include "Setupserver.h"
 #include "ClientServer.h"
-#include "MasterServer.h"
+#include "LeaderServer.h"
 #include "Config.h"
 
 #include <ArduinoOTA.h>
@@ -26,13 +26,13 @@ void setup() {
 	server = new ClientServer();
 	if (server->start()) return;
 
-	server = new MasterServer();
+	server = new LeaderServer();
 	if (server->start()) return;
 
 	server = new SetupServer();
 	if (server->start()) return;
 
-	Serial.println("\nFailed to become client, master, and setup. Restarting...");
+	Serial.println("\nFailed to become client, leader, and setup. Restarting...");
 	ESP.restart();
 }
 

@@ -11,6 +11,24 @@ void FrameworkServer::stop() {
 	server.stop();
 }
 
+void FrameworkServer::Response(t_http_codes code) {
+	server.send(code);
+}
+void FrameworkServer::Response(t_http_codes code, JsonObject& message) {
+	String result;
+	message.printTo(result);
+	Response(code, result);
+}
+void FrameworkServer::Response(t_http_codes code, String message) {
+	server.send(code, "application/json", message);
+}
+void FrameworkServer::ErrorResponse(t_http_codes code) {
+	Response(code);
+}
+void FrameworkServer::ErrorResponse(t_http_codes code, String errorMessage) {
+	server.send(code, "application/json", "{\"error\":\"" + errorMessage + "\"}");
+}
+
 char* FrameworkServer::getDeviceHostName() {
 	char* newName = "ESP_";
 	char hostName[10];

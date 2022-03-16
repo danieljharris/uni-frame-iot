@@ -1,38 +1,41 @@
-//MasterServer.app
+//LeaderServer.app
 
-#include "MasterServer.h"
+#include "LeaderServer.h"
 
-bool MasterServer::start() {
-	Serial.println("Entering becomeMaster");
+bool LeaderServer::start() {
+	Serial.println("Entering becomeLeader");
 
 	WiFi.mode(WIFI_STA);
 
 	if (!connectToWiFi(creds.load())) {
-		Serial.println("failed to become master, could not connect to wifi");
+		Serial.println("failed to become leader, could not connect to wifi");
 		return false;
 	}
 	
-	Serial.println("I am a master!");
+	Serial.println("I am a leader!");
 
 	//Starts access point for new devices to connect to
 	Serial.println("Opening soft access point...");
-	WiFi.softAP(MASTER_INFO.ssid, MASTER_INFO.password);
+	WiFi.softAP(LEADER_INFO.ssid, LEADER_INFO.password);
 
-	startServer(masterEndpoints, MASTER_PORT, MASTER_MDNS_ID);
+	startServer(leaderEndpoints);
 	Serial.println("Ready!");
 	
 	return true;
 }
 
-void MasterServer::update() {
+void LeaderServer::update() {
 	expireClientLookup();
-	checkForOtherMasters();
+	checkForOtherLeaders();
 }
 
-//Master endpoints
-std::function<void()> MasterServer::handleUnknownEndpoint() {
+//Leader endpoints
+std::function<void()> LeaderServer::handleUnknownEndpoint() {
 	std::function<void()> lambda = [=]() {
-		Serial.println("Entering handleMasterUnknown / masterToClientEndpoint");
+		// Used to stop MDNS requests hitting handleUnknownEndpoint
+		if(server.uri().equals("/")) return;
+
+		Serial.println("Entering handleLeaderUnknown / leaderToClientEndpoint");
 
 		//If the request has no name/id or its name/id matches mine
 		if (!validIdOrName() || isForMe()) {
@@ -46,15 +49,16 @@ std::function<void()> MasterServer::handleUnknownEndpoint() {
 			}
 			//When no matching endpoint can be found
 			server.send(HTTP_CODE_NOT_FOUND, "application/json", "{\"error\":\"endpoint_missing\"}");
+			Serial.println("No matching endpoint found. URL: " + server.uri());
 		}
 		else reDirect();
 	};
 
 	return lambda;
 }
-std::function<void()> MasterServer::handleMasterGetWiFiInfo() {
+std::function<void()> LeaderServer::handleLeaderGetWiFiInfo() {
 	std::function<void()> lambda = [=]() {
-		Serial.println("Entering handleMasterGetWiFiInfo");
+		Serial.println("Entering handleLeaderGetWiFiInfo");
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.createObject();
@@ -62,7 +66,7 @@ std::function<void()> MasterServer::handleMasterGetWiFiInfo() {
 		WiFiInfo info = creds.load();
 		json["ssid"] = info.ssid;
 		json["password"] = info.password;
-		json["master_ip"] = WiFi.localIP().toString();
+		json["leader_ip"] = WiFi.localIP().toString();
 
 		String content;
 		json.printTo(content);
@@ -72,9 +76,9 @@ std::function<void()> MasterServer::handleMasterGetWiFiInfo() {
 
 	return lambda;
 }
-std::function<void()> MasterServer::handleMasterGetDevices() {
+std::function<void()> LeaderServer::handleLeaderGetDevices() {
 	std::function<void()> lambda = [=]() {
-		Serial.println("Entering handleMasterGetDevices");
+		Serial.println("Entering handleLeaderGetDevices");
 
 		DynamicJsonBuffer jsonBuffer;
 		JsonObject& json = jsonBuffer.createObject();
@@ -101,9 +105,9 @@ std::function<void()> MasterServer::handleMasterGetDevices() {
 
 	return lambda;
 }
-std::function<void()> MasterServer::handleMasterPostCheckin() {
+std::function<void()> LeaderServer::handleLeaderPostCheckin() {
 	std::function<void()> lambda = [=]() {
-		Serial.println("Entering handleMasterPostCheckin");
+		Serial.println("Entering handleLeaderPostCheckin");
 
 		//Gets the IP from the client calling
 		String ip = server.client().remoteIP().toString();
@@ -145,20 +149,24 @@ std::function<void()> MasterServer::handleMasterPostCheckin() {
 	return lambda;
 }
 
-//Master creation
-void MasterServer::checkForOtherMasters() {
-	Serial.println("Checking for duplicate master...");
+//Leader creation
+void LeaderServer::checkForOtherLeaders() {
+	Serial.println("Checking for duplicate leader...");
 
 	//Initalises the chosen id to the id of the current device
 	String myId = String(ESP.getChipId());
 	String chosenId = myId;
 
-	std::vector<String> masterIPs;
+	std::vector<String> leaderIPs;
 
 	//Query for client devices
-	int devicesFound = MDNS.queryService(MASTER_MDNS_ID, "tcp");
+	int devicesFound = MDNS.queryService(MDNS_ID, "tcp");
 	for (int i = 0; i < devicesFound; ++i) {
-		masterIPs.push_back(MDNS.answerIP(i).toString());
+		const char* answerTxts = MDNS.answerTxts(i);
+		Serial.println("HERE!!!!!!!!!!!!");
+		Serial.println(answerTxts);
+
+		leaderIPs.push_back(MDNS.answerIP(i).toString());
 		String reply = MDNS.answerHostname(i);
 
 		DynamicJsonBuffer jsonBuffer;
@@ -172,16 +180,17 @@ void MasterServer::checkForOtherMasters() {
 			}
 		}
 	}
+	MDNS.removeQuery(); // Clean up MDNS Query
 
 	if (myId.equals(chosenId)) {
-		Serial.println("I've been chosen to stay as master");
-		closeOtherMasters(masterIPs);
+		Serial.println("I've been chosen to stay as leader");
+		closeOtherLeaders(leaderIPs);
 	}
 	else {
-		Serial.println("Another master exists, turning into client");
+		Serial.println("Another leader exists, turning into client");
 	}
 }
-void MasterServer::closeOtherMasters(std::vector<String> masterIPs) {
+void LeaderServer::closeOtherLeaders(std::vector<String> leaderIPs) {
 	DynamicJsonBuffer jsonBuffer;
 	JsonObject& json = jsonBuffer.createObject();
 
@@ -190,32 +199,32 @@ void MasterServer::closeOtherMasters(std::vector<String> masterIPs) {
 	String result;
 	json.printTo(result);
 
-	//Notifies all other masters that this device will be the only master
-	for (std::vector<String>::iterator it = masterIPs.begin(); it != masterIPs.end(); ++it) {
-		Serial.println("Letting know I'm the only master: " + *it);
+	//Notifies all other leaders that this device will be the only leader
+	for (std::vector<String>::iterator it = leaderIPs.begin(); it != leaderIPs.end(); ++it) {
+		Serial.println("Letting know I'm the only leader: " + *it);
 
 		HTTPClient http;
-		//Increase the timeout from 5000 to allow other clients to go through the electNewMaster steps
+		//Increase the timeout from 5000 to allow other clients to go through the electNewLeader steps
 		http.setTimeout(7000);
-		http.begin("http://" + *it + ":" + MASTER_PORT + "/restart");
+		http.begin("http://" + *it + ":" + PORT + "/restart");
 		http.sendRequest("POST", result);
 		http.end();
 	}
 
-	MDNS.setHostname(MASTER_INFO.hostname);
+	MDNS.setHostname(LEADER_INFO.hostname);
 	MDNS.notifyAPChange();
 	MDNS.update();
 }
 
 //REST request routing
-String MasterServer::getDeviceIPFromIdOrName(String idOrName) {
+String LeaderServer::getDeviceIPFromIdOrName(String idOrName) {
 	Serial.println("idOrName:" + idOrName);
 	for (std::unordered_set<Device>::iterator it = clientLookup.begin(); it != clientLookup.end(); ++it) {
 		if (it->id.equals(idOrName) || it->name.equals(idOrName)) return it->ip;
 	}
 	return "";
 }
-void MasterServer::reDirect() {
+void LeaderServer::reDirect() {
 	String idOrName = "";
 	if (server.hasArg("id")) idOrName = server.arg("id");
 	else if (server.hasArg("name")) idOrName = server.arg("name");
@@ -232,10 +241,10 @@ void MasterServer::reDirect() {
 	}
 
 	WiFiClientSecure client;
-	if (client.connect(ip, CLIENT_PORT)) {
+	if (client.connect(ip, PORT)) {
 		HTTPClient http;
 		http.setTimeout(2000); //Reduced the timeout from 5000 to fail faster
-		http.begin(client, ip, CLIENT_PORT, server.uri());
+		http.begin(client, ip, PORT, server.uri());
 
 		String payload = "";
 		if (server.hasArg("plain")) payload = server.arg("plain");
@@ -270,7 +279,7 @@ void MasterServer::reDirect() {
 		return;
 	}
 }
-//String MasterServer::reDirect(String ip) {
+//String LeaderServer::reDirect(String ip) {
 //	HTTPClient http;
 //	http.begin("http://" + ip + ":" + CLIENT_PORT + server.uri());
 //
@@ -290,7 +299,7 @@ void MasterServer::reDirect() {
 //		return reply;
 //	}
 //}
-void MasterServer::expireClientLookup() {
+void LeaderServer::expireClientLookup() {
 	Serial.println("Handleing client expiring");
 	for (std::unordered_set<Device>::iterator it = clientLookup.begin(); it != clientLookup.end(); ) {
 		if (it->timeout->expired()) {
@@ -301,7 +310,7 @@ void MasterServer::expireClientLookup() {
 }
 
 //Helper functions for REST routing
-const char* MasterServer::getMethod() {
+const char* LeaderServer::getMethod() {
 	const char* method;
 	switch (server.method()) {
 		case HTTP_ANY:     method = "GET";		break;
@@ -314,7 +323,7 @@ const char* MasterServer::getMethod() {
 	}
 	return method;
 }
-bool MasterServer::isForMe() {
+bool LeaderServer::isForMe() {
 	if (server.hasArg("id")) {
 		String id = server.arg("id");
 		String myId = (String)ESP.getChipId();
@@ -331,7 +340,7 @@ bool MasterServer::isForMe() {
 		return false;
 	}
 }
-bool MasterServer::validIdOrName() {
+bool LeaderServer::validIdOrName() {
 	if (!server.hasArg("id") && !server.hasArg("name")) return false;
 	else return true;
 }
@@ -339,9 +348,9 @@ bool MasterServer::validIdOrName() {
 
 //Light switch example
 
-//std::function<void()> MasterServer::handleMasterPostLightSwitch() {
+//std::function<void()> LeaderServer::handleLeaderPostLightSwitch() {
 //	std::function<void()> lambda = [=]() {
-//		Serial.println("Entering handleMasterPostLightSwitch");
+//		Serial.println("Entering handleLeaderPostLightSwitch");
 //
 //		if (!server.hasArg("plain")) { server.send(HTTP_CODE_BAD_REQUEST); return; }
 //
@@ -382,12 +391,12 @@ bool MasterServer::validIdOrName() {
 //	return lambda;
 //}
 
-void MasterServer::handle() {
+void LeaderServer::handle() {
 	server.handleClient();
 	checkInputChange();
 	tinyUPnP.updatePortMappings(600000);
 };
-void MasterServer::checkInputChange() {
+void LeaderServer::checkInputChange() {
 	bool currentInputValue = (LOW == digitalRead(GPIO_INPUT_PIN));
 	if (lastInputValue != currentInputValue) {
 		Serial.println("Input changed!");
@@ -405,7 +414,7 @@ void MasterServer::checkInputChange() {
 				Device device = *it;
 				if (device.id == id) {
 
-					String clientIp = device.ip + ":" + CLIENT_PORT;
+					String clientIp = device.ip + ":" + PORT;
 					String clientUrl = "http://" + clientIp + "/" + path;
 
 					HTTPClient http;

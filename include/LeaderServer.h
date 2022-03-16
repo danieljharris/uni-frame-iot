@@ -1,7 +1,7 @@
-// MasterServer.h
+// LeaderServer.h
 
-#ifndef _MASTERSERVER_h
-#define _MASTERSERVER_h
+#ifndef _LEADERSERVER_h
+#define _LEADERSERVER_h
 
 #include "arduino.h"
 
@@ -20,29 +20,29 @@ namespace std {
 	};
 };
 
-class MasterServer : public ClientServer {
+class LeaderServer : public ClientServer {
 private:
-	// Master endpoint handleing
+	// Leader endpoint handleing
 	std::function<void()> handleUnknownEndpoint();
-	std::function<void()> handleMasterGetWiFiInfo();
-	std::function<void()> handleMasterGetDevices();
-	std::function<void()> handleMasterPostCheckin();
+	std::function<void()> handleLeaderGetWiFiInfo();
+	std::function<void()> handleLeaderGetDevices();
+	std::function<void()> handleLeaderPostCheckin();
 
-	// Master endpoints
-	std::vector<Endpoint> masterEndpoints{
+	// Leader endpoints
+	std::vector<Endpoint> leaderEndpoints{
 		Endpoint(handleUnknownEndpoint()),
 
-		Endpoint("/wifi_info", HTTP_GET, handleMasterGetWiFiInfo()),
-		Endpoint("/devices", HTTP_GET, handleMasterGetDevices()),
-		Endpoint("/checkin", HTTP_POST, handleMasterPostCheckin()),
+		Endpoint("/wifi_info", HTTP_GET,  handleLeaderGetWiFiInfo()),
+		Endpoint("/devices",   HTTP_GET,  handleLeaderGetDevices()),
+		Endpoint("/checkin",   HTTP_POST, handleLeaderPostCheckin()),
 
 		// Light switch example
-		// Endpoint("/light/switch", HTTP_POST, handleMasterPostLightSwitch())
+		// Endpoint("/light/switch", HTTP_POST, handleLeaderPostLightSwitch())
 	};
 
-	// Master creation
-	void checkForOtherMasters();
-	void closeOtherMasters(std::vector<String> clientIPs);
+	// Leader creation
+	void checkForOtherLeaders();
+	void closeOtherLeaders(std::vector<String> clientIPs);
 
 	// REST request routing
 	std::unordered_set<Device> clientLookup;
@@ -57,7 +57,7 @@ private:
 	bool validIdOrName();
 
 	// Light switch example
-	// std::function<void()> handleMasterPostLightSwitch();
+	// std::function<void()> handleLeaderPostLightSwitch();
 
 	bool lastInputValue = false;
 	void checkInputChange();

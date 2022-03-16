@@ -8,7 +8,6 @@
 #include "FrameworkServer.h"
 #include <ESP8266mDNS.h>
 #include <ArduinoOTA.h>
-#include <ArduinoJson.h>
 #include <TinyUPnP.h>
 
 class ClientServer : public FrameworkServer {
@@ -19,23 +18,23 @@ private:
 	std::function<void()> handleClientPostName();
 	std::function<void()> handleClientPostWiFiCreds();
 	std::function<void()> handleClientPostRestart();
-	std::function<void()> handleClientPostNewMaster();
+	std::function<void()> handleClientPostNewLeader();
 
 	// Handle configurable connected device
 	std::function<void()> handleClientGetConnected();
 	std::function<void()> handleClientPostConnected();
 
 	// Client creation
-	bool findAndConnectToMaster();
-	bool findMaster();
+	bool findAndConnectToLeader();
+	bool findLeader();
 	bool getAndSaveMainWiFiInfo();
 
-	// Client to master transition handleing
-	String masterIP = "";
-	void checkinWithMaster();
-	bool updateMasterIP();
-	void electNewMaster();
-	void becomeMaster(std::vector<String> clientIPs);
+	// Client to leader transition handleing
+	String leaderIP = "";
+	void checkinWithLeader();
+	bool updateLeaderIP();
+	void electNewLeader();
+	void becomeLeader(std::vector<String> clientIPs);
 
 	// Power control
 	void power_toggle();
@@ -51,32 +50,32 @@ protected:
 	std::vector<Endpoint> clientEndpoints{
 		Endpoint(handleUnknownEndpoint()),
 		
-		Endpoint("/device", HTTP_GET, handleClientGetInfo()),
-		Endpoint("/device", HTTP_POST, handleClientPostDevice()),
-		Endpoint("/name", HTTP_POST, handleClientPostName()),
+		Endpoint("/device", 	 HTTP_GET,  handleClientGetInfo()),
+		Endpoint("/device", 	 HTTP_POST, handleClientPostDevice()),
+		Endpoint("/name", 		 HTTP_POST, handleClientPostName()),
 		Endpoint("/credentials", HTTP_POST, handleClientPostWiFiCreds()),
-		Endpoint("/restart", HTTP_POST, handleClientPostRestart()),
-		Endpoint("/master", HTTP_POST, handleClientPostNewMaster()),
+		Endpoint("/restart", 	 HTTP_POST, handleClientPostRestart()),
+		Endpoint("/leader", 	 HTTP_POST, handleClientPostNewLeader()),
 
 		// Handle configurable connected device
-		Endpoint("/connected", HTTP_GET, handleClientGetConnected()),
+		Endpoint("/connected", HTTP_GET,  handleClientGetConnected()),
 		Endpoint("/connected", HTTP_POST, handleClientPostConnected()),
 
 		// Light switch example
 		// Endpoint("/light/switch", HTTP_POST, handleClientPostLightSwitch()),
 	};
 
-	// General reusable functions for client & master servers
-	void startServer(std::vector<Endpoint> endpoints, int port, String mdnsId);
+	// General reusable functions for client & leader servers
+	void startServer(std::vector<Endpoint> endpoints);
 	String getDeviceInfo();
 	bool connectToWiFi(WiFiInfo info);
-	void enableMDNS(String mdnsId);
+	void enableMDNS();
 	void enableOTA();
-	void enableUPnP(int port, String mdnsId);
+	void enableUPnP(int port, String hostname);
 	TinyUPnP tinyUPnP = TinyUPnP(20000);
 
 	// Cloud integration
-	void selfRegister();
+	bool selfRegister();
 	void configUpdate();
 
 	String getConnected();
